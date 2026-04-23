@@ -15,6 +15,16 @@ type Coordinator struct {
 
 // Your code here -- RPC handlers for the worker to call.
 
+//RPC to call map with given file path
+func () CallMap {
+
+}
+
+//RPC to call reduce with given file path
+func () CallReduce {
+
+}
+
 // an example RPC handler.
 //
 // the RPC argument and reply types are defined in rpc.go.
