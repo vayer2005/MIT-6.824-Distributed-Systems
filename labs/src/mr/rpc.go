@@ -21,3 +21,10 @@ type ExampleReply struct {
 
 // Add your RPC definitions here.
 
+type TaskRequest struct{}
+
+type TaskReply struct{
+	Map bool //True if current task is a Map
+	File string
+}
+

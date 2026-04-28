@@ -6,23 +6,30 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
+	"sync/atomic"
 )
 
 type Coordinator struct {
 	// Your definitions here.
+	files []string
+	idx atomic.Uint64
 
 }
 
 // Your code here -- RPC handlers for the worker to call.
 
-//RPC to call map with given file path
-func () CallMap {
 
-}
-
-//RPC to call reduce with given file path
-func () CallReduce {
-
+//  Requesting a task from the RPC Handler, return a file with whether you are mapping or not
+func (c *Coordinator) FindTask(args *TaskRequest, reply *TaskReply) error {
+	
+	if (c.idx.Load() < uint64(len(c.files))) {
+		reply.Map = true
+		reply.File = c.files[c.idx.Load()]
+	} else {
+		reply.Map = false
+		reply.File = ""
+	}
+	return nil
 }
 
 // an example RPC handler.

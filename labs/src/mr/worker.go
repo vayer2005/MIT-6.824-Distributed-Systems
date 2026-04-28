@@ -31,6 +31,28 @@ func Worker(sockname string, mapf func(string, string) []KeyValue,
 	coordSockName = sockname
 
 	// Your worker implementation here.
+
+	//Call cordinator to get a task
+	args := TaskRequest{}
+	reply := TaskReply{}
+
+	ok := call("Coordinator.FindTask", &args, &reply)
+	
+	if ok && reply.Map {
+		data, err := os.ReadFile(reply.File)
+		if err != nil {
+			fmt.Print(err)
+			return
+		}
+		contents := string(data)
+		mapf(reply.File, contents)
+
+	} else if ok {
+		//reducef()
+	} 
+	else {
+		fmt.Printf("call failed!\n")
+	}
 	
 
 	// uncomment to send the Example RPC to the coordinator.
