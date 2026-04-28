@@ -23,8 +23,11 @@ type ExampleReply struct {
 
 type TaskRequest struct{}
 
-type TaskReply struct{
-	Map bool //True if current task is a Map
-	File string
+type TaskReply struct {
+	Map       bool // True if current task is a Map
+	File      string
+	ReduceId  int64
+	NReduce   int // exported for RPC (worker uses ihash % NReduce)
+	MapTaskId int
 }
 

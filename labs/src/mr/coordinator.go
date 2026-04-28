@@ -6,14 +6,15 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
-	"sync/atomic"
+	"sync"
 )
 
 type Coordinator struct {
-	// Your definitions here.
-	files []string
-	idx atomic.Uint64
-
+	mu         sync.Mutex
+	files      []string
+	nReduce    int   // fixed for this job: reduce task ids are 0 .. nReduce-1
+	mapIdx     int   // next input file index to assign for map tasks
+	reduceNext int   // next reduce task id to assign (starts at 0)
 }
 
 // Your code here -- RPC handlers for the worker to call.
@@ -21,13 +22,23 @@ type Coordinator struct {
 
 //  Requesting a task from the RPC Handler, return a file with whether you are mapping or not
 func (c *Coordinator) FindTask(args *TaskRequest, reply *TaskReply) error {
-	
-	if (c.idx.Load() < uint64(len(c.files))) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.mapIdx < len(c.files) {
 		reply.Map = true
-		reply.File = c.files[c.idx.Load()]
-	} else {
+		reply.File = c.files[c.mapIdx]
+		reply.MapTaskId = c.mapIdx
+		reply.NReduce = c.nReduce
+		c.mapIdx++
+		return nil
+	}
+	if c.reduceNext < c.nReduce {
 		reply.Map = false
-		reply.File = ""
+		reply.ReduceId = int64(c.reduceNext)
+		reply.NReduce = c.nReduce
+		c.reduceNext++
+		return nil
 	}
 	return nil
 }
@@ -66,9 +77,12 @@ func (c *Coordinator) Done() bool {
 // main/mrcoordinator.go calls this function.
 // nReduce is the number of reduce tasks to use.
 func MakeCoordinator(sockname string, files []string, nReduce int) *Coordinator {
-	c := Coordinator{}
-
-	// Your code here.
+	c := Coordinator{
+		files:      files,
+		nReduce:    nReduce,
+		mapIdx:     0,
+		reduceNext: 0,
+	}
 
 	c.server(sockname)
 	return &c

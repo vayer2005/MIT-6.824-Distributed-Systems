@@ -1,10 +1,16 @@
 package mr
 
-import "fmt"
-import "log"
-import "net/rpc"
-import "hash/fnv"
-import "os"
+import (
+	"encoding/json"
+	"fmt"
+	"hash/fnv"
+	"io"
+	"log"
+	"net/rpc"
+	"os"
+	"path/filepath"
+	"sort"
+)
 
 
 // Map functions return a slice of KeyValue.
@@ -23,14 +29,81 @@ func ihash(key string) int {
 
 var coordSockName string // socket for coordinator
 
+// encodeToFile appends one JSON-encoded KeyValue to mr-<mapTask>-<reduceId>.
+func encodeToFile(reduceId int, mapTask int, kv KeyValue) error {
+	name := fmt.Sprintf("mr-%d-%d", mapTask, reduceId)
+	f, err := os.OpenFile(name, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return json.NewEncoder(f).Encode(&kv)
+}
+
+
+// decodeFromFilesAndReduce reads all mr-*-<reduceId> shards (same layout as mrsequential after merge).
+func decodeFromFilesAndReduce(reduceId int, reducef func(string, []string) string) error {
+	pattern := fmt.Sprintf("mr-*-%d", reduceId)
+	filenames, err := filepath.Glob(pattern)
+	if err != nil {
+		return err
+	}
+
+	var kva []KeyValue
+	for _, name := range filenames {
+		f, err := os.Open(name)
+		if err != nil {
+			return err
+		}
+		dec := json.NewDecoder(f)
+		for {
+			var kv KeyValue
+			if err := dec.Decode(&kv); err != nil {
+				if err == io.EOF {
+					break
+				}
+				f.Close()
+				return err
+			}
+			kva = append(kva, kv)
+		}
+		f.Close()
+	}
+
+	sort.Slice(kva, func(i, j int) bool {
+		return kva[i].Key < kva[j].Key
+	})
+
+	oname := fmt.Sprintf("mr-out-%d", reduceId)
+	ofile, err := os.Create(oname)
+	if err != nil {
+		return err
+	}
+	defer ofile.Close()
+
+	i := 0
+	for i < len(kva) {
+		j := i + 1
+		for j < len(kva) && kva[j].Key == kva[i].Key {
+			j++
+		}
+		values := []string{}
+		for k := i; k < j; k++ {
+			values = append(values, kva[k].Value)
+		}
+		output := reducef(kva[i].Key, values)
+		fmt.Fprintf(ofile, "%v %v\n", kva[i].Key, output)
+		i = j
+	}
+
+	return nil
+}
 
 // main/mrworker.go calls this function.
 func Worker(sockname string, mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
 	coordSockName = sockname
-
-	// Your worker implementation here.
 
 	//Call cordinator to get a task
 	args := TaskRequest{}
@@ -45,12 +118,27 @@ func Worker(sockname string, mapf func(string, string) []KeyValue,
 			return
 		}
 		contents := string(data)
-		mapf(reply.File, contents)
+		kva := mapf(reply.File, contents)
+		mapTask := reply.MapTaskId
+		nReduce := reply.NReduce
 
+		for i := range kva {
+			kv := kva[i]
+			reduceId := ihash(kv.Key) % nReduce
+
+			if err := encodeToFile(reduceId, mapTask, kv); err != nil {
+				log.Printf("encodeToFile %v", err)
+				return
+			}
+		}
+		
 	} else if ok {
-		//reducef()
-	} 
-	else {
+		if err := decodeFromFilesAndReduce(int(reply.ReduceId), reducef); err != nil {
+			log.Printf("decodeFromFilesAndReduce: %v", err)
+			return
+		}
+
+	} else {
 		fmt.Printf("call failed!\n")
 	}
 	
