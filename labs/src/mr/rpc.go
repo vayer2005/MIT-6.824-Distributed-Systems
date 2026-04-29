@@ -31,3 +31,8 @@ type TaskReply struct {
 	MapTaskId int
 }
 
+type CompleteMap struct {}
+
+type CompleteReduce struct {}
+
+type CompleteResponse struct {}

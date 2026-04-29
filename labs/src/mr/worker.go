@@ -9,9 +9,13 @@ import (
 	"net/rpc"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"time"
 )
 
+// Intermediate shards only: mr-<mapTask>-<reduce>; excludes mr-out-* (Glob "mr-*-r" matches mr-out-r).
+var intermediateShardName = regexp.MustCompile(`^mr-\d+-\d+$`)
 
 // Map functions return a slice of KeyValue.
 type KeyValue struct {
@@ -40,8 +44,7 @@ func encodeToFile(reduceId int, mapTask int, kv KeyValue) error {
 	return json.NewEncoder(f).Encode(&kv)
 }
 
-
-// decodeFromFilesAndReduce reads all mr-*-<reduceId> shards (same layout as mrsequential after merge).
+// decodeFromFilesAndReduce reads JSON shards mr-<map>-<reduceId>; skips mr-out-* (matched wrongly by mr-*-<id> glob).
 func decodeFromFilesAndReduce(reduceId int, reducef func(string, []string) string) error {
 	pattern := fmt.Sprintf("mr-*-%d", reduceId)
 	filenames, err := filepath.Glob(pattern)
@@ -51,6 +54,10 @@ func decodeFromFilesAndReduce(reduceId int, reducef func(string, []string) strin
 
 	var kva []KeyValue
 	for _, name := range filenames {
+		base := filepath.Base(name)
+		if !intermediateShardName.MatchString(base) {
+			continue
+		}
 		f, err := os.Open(name)
 		if err != nil {
 			return err
@@ -107,44 +114,54 @@ func Worker(sockname string, mapf func(string, string) []KeyValue,
 
 	//Call cordinator to get a task
 	args := TaskRequest{}
-	reply := TaskReply{}
-
-	ok := call("Coordinator.FindTask", &args, &reply)
 	
-	if ok && reply.Map {
-		data, err := os.ReadFile(reply.File)
-		if err != nil {
-			fmt.Print(err)
-			return
-		}
-		contents := string(data)
-		kva := mapf(reply.File, contents)
-		mapTask := reply.MapTaskId
-		nReduce := reply.NReduce
+	
+	for {
+		reply := TaskReply{}
+		ok := call("Coordinator.FindTask", &args, &reply)
 
-		for i := range kva {
-			kv := kva[i]
-			reduceId := ihash(kv.Key) % nReduce
-
-			if err := encodeToFile(reduceId, mapTask, kv); err != nil {
-				log.Printf("encodeToFile %v", err)
+		if ok && reply.Map {
+			data, err := os.ReadFile(reply.File)
+			if err != nil {
+				fmt.Print(err)
 				return
 			}
-		}
-		
-	} else if ok {
-		if err := decodeFromFilesAndReduce(int(reply.ReduceId), reducef); err != nil {
-			log.Printf("decodeFromFilesAndReduce: %v", err)
-			return
-		}
+			contents := string(data)
+			kva := mapf(reply.File, contents)
+			mapTask := reply.MapTaskId
+			nReduce := reply.NReduce
 
-	} else {
-		fmt.Printf("call failed!\n")
+			for i := range kva {
+				kv := kva[i]
+				reduceId := ihash(kv.Key) % nReduce
+
+				if err := encodeToFile(reduceId, mapTask, kv); err != nil {
+					log.Printf("encodeToFile %v", err)
+					return
+				}
+			}
+			mapCompleteArgs := CompleteMap{}
+			mapCompleteReply := CompleteResponse{}
+			_ = call("Coordinator.CompleteMap", &mapCompleteArgs, &mapCompleteReply)
+
+			// Real reduce replies always set NReduce from the coordinator; idle/no-task uses zero TaskReply.
+		} else if ok && !reply.Map && reply.NReduce > 0 {
+			if err := decodeFromFilesAndReduce(int(reply.ReduceId), reducef); err != nil {
+				log.Printf("decodeFromFilesAndReduce: %v", err)
+				return
+			}
+			recCompleteArgs := CompleteReduce{}
+			recCompleteReply := CompleteResponse{}
+			_ = call("Coordinator.CompleteReduce", &recCompleteArgs, &recCompleteReply)
+
+		} else if ok {
+			// Waiting for maps to finish or reduces to become available — FindTask returned empty reply.
+			time.Sleep(time.Second)
+		} else {
+			// Coordinator exited or RPC failed — lab says worker may exit.
+			break
+		}
 	}
-	
-
-	// uncomment to send the Example RPC to the coordinator.
-	// CallExample()
 
 }
 

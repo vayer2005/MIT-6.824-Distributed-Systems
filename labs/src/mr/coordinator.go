@@ -15,9 +15,30 @@ type Coordinator struct {
 	nReduce    int   // fixed for this job: reduce task ids are 0 .. nReduce-1
 	mapIdx     int   // next input file index to assign for map tasks
 	reduceNext int   // next reduce task id to assign (starts at 0)
+	mapsDone   int   // num of maps complete
+	reduceDone int   // num of reduce complete
 }
 
 // Your code here -- RPC handlers for the worker to call.
+
+//Complete a Map Task
+
+func (c *Coordinator) CompleteMap(args *CompleteMap, reply *CompleteResponse) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.mapsDone += 1
+
+	return nil
+}
+
+//Complete a Reduce Task
+func (c *Coordinator) CompleteReduce(args *CompleteReduce, reply *CompleteResponse) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.reduceDone += 1
+
+	return nil
+}
 
 
 //  Requesting a task from the RPC Handler, return a file with whether you are mapping or not
@@ -32,8 +53,7 @@ func (c *Coordinator) FindTask(args *TaskRequest, reply *TaskReply) error {
 		reply.NReduce = c.nReduce
 		c.mapIdx++
 		return nil
-	}
-	if c.reduceNext < c.nReduce {
+	} else if c.reduceNext < c.nReduce && c.mapsDone == len(c.files) {
 		reply.Map = false
 		reply.ReduceId = int64(c.reduceNext)
 		reply.NReduce = c.nReduce
@@ -68,7 +88,9 @@ func (c *Coordinator) server(sockname string) {
 func (c *Coordinator) Done() bool {
 	ret := false
 
-	// Your code here.
+	if c.mapsDone == len(c.files) && c.reduceDone == c.nReduce {
+		return true
+	}
 
 	return ret
 }
@@ -82,6 +104,8 @@ func MakeCoordinator(sockname string, files []string, nReduce int) *Coordinator 
 		nReduce:    nReduce,
 		mapIdx:     0,
 		reduceNext: 0,
+		mapsDone: 0,
+		reduceDone: 0,
 	}
 
 	c.server(sockname)
