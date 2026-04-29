@@ -1,0 +1,34 @@
+- Big Storage 
+- Performance -> sharding (leads to more faults)
+- fault tolerance -> leads to replication
+- Replication -> Replicas can get out of sync (inconsistencies)
+- Consistency -> low performance.
+- Strong consistency
+	- all users see the same most recent data simultaneosly
+- Bad replication design
+	- Two servers with complete copy of data
+	- Writes may be processed in different order on both servers
+- Google File System
+	- Sharding (split data among many servers)
+		- Single files may be bigger than any single disk
+	- Big sequential access
+	- Master maps filename to where to find the data![[Screenshot 2026-04-28 at 9.14.35 PM.png]]
+		- filename -> array of chunk handles
+		- chunk handle -> list of chunk servers that store replicas of that data
+	- chunk servers 
+	- Log, checkpoint - disk
+		- checkpoint writes the current state to disk from most recent checkpoint + log
+	- Read
+		- client sendsfile name, offset -> master
+		- master sends chunk handle and list of servers
+			- client caches result
+		- client talks to one chunk server (linux filesystem) and reads returned data
+	- Writes
+		- Client asks master to append to file(multiple can be happening at same time)
+		- No primary -> Master finds out which Chunkserver has most up to date replicas
+		- Primary picks an offset, all replicas are told to write appended record to that offset
+	- Split Brain (multiple primaries)
+		- Caused by network partition
+
+GFS Paper Notes
+- 
