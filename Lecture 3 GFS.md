@@ -30,5 +30,23 @@
 	- Split Brain (multiple primaries)
 		- Caused by network partition
 
-GFS Paper Notes
-- 
+GFS Paper Notes![[Screenshot 2026-04-28 at 11.21.52 PM.png]]
+- Component failures are the norm rather than the exception (Cheap hardware)
+- Multi-GB files are common (modest number of large files)
+- Files divided into fixed size chunks
+	- identified by 64 bit chunk handle assigned by master at chunk creation time
+- Chunkservers store chunks on local disks as linux files.
+	- by default each chunk is replicated on multiple chunkservers
+- Master
+	- Not used directly for reads and writes inorder to not be a bottleneck (single master)
+	- returns which chunkservers clients should contact: caches key=(filename, chunk_idx_offset)
+	- Chunkserver info is not persistently stored in master; master regularly sends heartbeat messages to get the info
+- Interesting note about chunkservers becoming hotspots
+	- " hot spots did develop when GFS was first used by a batch-queue system: an executable was written to GFS as a single-chunk file and then started on hundreds of machines at the same time. The few chunkservers storing this executable were overloaded by hundreds of simultaneous requests. We fixed this problem by storing such executables with a higher replication factor and by making the batchqueue system stagger application start times. A potential long-term solution is to allow clients to read data from other clients in such situations."
+- Leases are used to maintain consistent mutation order across replicas
+	- Master grants a chunk lease to one of the replicas (the primary)
+	- This determines the serial order of writes to a chunk
+	- Master sends primary and secondaries back to client who wants to write.
+- Record appends
+	- 1) Master finds up to date copies of the replicas (by version numbers master knows)
+	- 
