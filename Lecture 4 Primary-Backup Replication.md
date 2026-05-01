@@ -1,0 +1,29 @@
+- Fail-stop faults: stops after failures
+- State transfer
+	- Primary sends copy of entire state to the backup (ie RAM)
+- Replicated state machine
+	- Only transfers external operations (network packet arriving)
+		- Much more efficient than sending entire RAM
+- P/B sync, cutover, anomalies, new replicas
+- Virtual Machine
+	- boot vm monitor/hypervisor -> boots up multiple operating systems on one machine
+- Two physical machines each running own VM 
+	- both on LAN with clients sending requests
+	- External disk server on LAN
+	- Send on emulated NIC to client (gets dropped on replica)
+- When machine crashes
+	- backup stops getting logs through logging channel
+	- Primary must be having issues.
+	- Backup goes live, stops waiting for input. 
+- Inputs arrive
+	- packet/data + interrupt (after DMA contents in memory)
+	- interrupt have to occur at the exact same instructions (timing of interrupt)
+	- no Multicore, non deterministic interrupts
+	- Microprocessor interrupts (also used for profiling)
+- The output rule
+	- primary not allowed to generate output (to client) unless backup recieves proper msg
+	- Performance slower
+	- 
+
+VMWare Paper notes
+-
