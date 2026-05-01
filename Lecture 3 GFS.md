@@ -28,7 +28,7 @@
 		- No primary -> Master finds out which Chunkserver has most up to date replicas
 		- Primary picks an offset, all replicas are told to write appended record to that offset
 	- Split Brain (multiple primaries)
-		- Caused by network partition
+		- Caused by network partition.
 
 GFS Paper Notes![[Screenshot 2026-04-28 at 11.21.52 PM.png]]
 - Component failures are the norm rather than the exception (Cheap hardware)
@@ -49,4 +49,10 @@ GFS Paper Notes![[Screenshot 2026-04-28 at 11.21.52 PM.png]]
 	- Master sends primary and secondaries back to client who wants to write.
 - Record appends
 	- 1) Master finds up to date copies of the replicas (by version numbers master knows)
-	- 
+	- 2)Picks a primary and the rest (all up to date) are secondary.
+		- Increment Version number
+		- tells primary and secondary new incremented version number (& whether they are primary)
+	- Master tells client who primaries and secondaries are.
+		- Primary then writes to end of chunk (offset picked) and writes to all other chunks
+- Two Phase Commit
+	- a distributed algorithm used to ensure all nodes in a system either commit or abort a transaction together, maintaining data atomicity and consistency
