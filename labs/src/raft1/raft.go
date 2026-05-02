@@ -32,7 +32,19 @@ type Raft struct {
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
 
+	currentTerm int
+	votedFor int
+	log  []int
+	commitIndex int
+	lastApplied int
+
+	serverState int // 0 follower, 1 leader, 2 candidate
+
+	electionDeadline time.Time
+
+
 }
+
 
 // return currentTerm and whether this server
 // believes it is the leader.
@@ -41,6 +53,15 @@ func (rf *Raft) GetState() (int, bool) {
 	var term int
 	var isleader bool
 	// Your code here (3A).
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	term = rf.currentTerm
+	if rf.serverState == 1 {
+		isleader = true
+	} else {
+		isleader = false
+	}
 	return term, isleader
 }
 
@@ -105,18 +126,51 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 // field names must start with capital letters!
 type RequestVoteArgs struct {
 	// Your data here (3A, 3B).
+	Term int
+	candidateId int
+	lastLogIndex int
+	lastLogTerm int
 }
 
 // example RequestVote RPC reply structure.
 // field names must start with capital letters!
 type RequestVoteReply struct {
 	// Your data here (3A).
+	term int
+	voteGranted int
 }
+
+//HEARTBEAT msg
+// Sent from leader to follower, resets followers timeout. when recieved by follower
+type ApppendEntriesArgs struct {
+
+}
+
+type ApppendEntriesReply struct {
+
+}
+
+func randomElectionTimeout() int64 {
+	return 250 + (rand.Int63() % 300)
+}
+
+
+func (rf *Raft) AppendEntriesHandler(server int, args *ApppendEntriesArgs, reply *ApplyErrReply) {
+	//TODO: reset timeout var. 
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	rf.electionDeadline = time.Now().Add(time.Duration(randomElectionTimeout()))
+
+}
+
 
 // example RequestVote RPC handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (3A, 3B).
+
+
 }
+
 
 // example code to send a RequestVote RPC to a server.
 // server is the index of the target server in rf.peers[].
@@ -173,13 +227,26 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	return index, term, isLeader
 }
 
+
 func (rf *Raft) ticker() {
 	for true {
 
 		// Your code here (3A)
-		// Check if a leader election should be started.
-
-
+		if (rf.serverState == 1) {
+			//LEADER TICK
+			for i := range(len(rf.peers)) {
+				if (i != rf.me) {
+					args := &ApppendEntriesArgs{}
+					reply := &ApppendEntriesReply{}
+					
+					//Can have issues/take a log time to return
+					ok := rf.peers[i].Call("Raft.AppendEntriesHandler", args, reply)
+				}
+			}
+		} else {
+			//FOLLOWER TICK
+		}
+	
 		// pause for a random amount of time between 50 and 350
 		// milliseconds.
 		ms := 50 + (rand.Int63() % 300)
@@ -203,7 +270,14 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.persister = persister
 	rf.me = me
 
+	go rf.ticker()
+
 	// Your initialization code here (3A, 3B, 3C).
+	rf.commitIndex = 0
+	rf.lastApplied = 0
+
+	rf.serverState = 0 //start as follower
+
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
