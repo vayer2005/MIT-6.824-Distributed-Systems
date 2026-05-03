@@ -123,19 +123,17 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 // example RequestVote RPC arguments structure.
 // field names must start with capital letters!
 type RequestVoteArgs struct {
-	// Your data here (3A, 3B).
 	Term         int
-	candidateId  int
-	lastLogIndex int
-	lastLogTerm  int
+	CandidateId  int
+	LastLogIndex int
+	LastLogTerm  int
 }
 
 // example RequestVote RPC reply structure.
 // field names must start with capital letters!
 type RequestVoteReply struct {
-	// Your data here (3A).
-	term        int
-	voteGranted int
+	Term        int
+	VoteGranted bool
 }
 
 // HEARTBEAT msg
@@ -160,8 +158,39 @@ func (rf *Raft) AppendEntries(args *ApppendEntriesArgs, reply *ApplyErrReply) {
 
 // example RequestVote RPC handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	// Your code here (3A, 3B).
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 
+	reply.Term = rf.currentTerm
+	reply.VoteGranted = false
+
+	// Stale term — reject (Figure 2).
+	if args.Term < rf.currentTerm {
+		return
+	}
+
+	// At least as new as us then adopt term and become follower if we were candidate/leader.
+	if args.Term > rf.currentTerm {
+		rf.currentTerm = args.Term
+		rf.votedFor = -1
+		rf.serverState = 0
+	}
+
+	lastIdx := len(rf.log) - 1
+	lastTerm := 0
+	if lastIdx >= 0 {
+		lastTerm = rf.log[lastIdx]
+	}
+	upToDate := args.LastLogTerm > lastTerm ||
+		(args.LastLogTerm == lastTerm && args.LastLogIndex >= lastIdx)
+
+	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) && upToDate {
+		rf.votedFor = args.CandidateId
+		reply.VoteGranted = true
+		rf.electionDeadline = time.Now().Add(time.Duration(randomElectionTimeout()) * time.Millisecond)
+	}
+
+	reply.Term = rf.currentTerm
 }
 
 // example code to send a RequestVote RPC to a server.
@@ -217,14 +246,49 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	return index, term, isLeader
 }
 
-func (rf *Raft) checkElect() {
-	//TODO: periodically check for re-election
-	
+func (rf *Raft) startElection() {
+	//TODO; already holding lock
+
+	rf.currentTerm += 1
+	lastIdx := len(rf.log) - 1
+	lastTerm := 0
+	if lastIdx >= 0 {
+		lastTerm = rf.log[lastIdx]
+	}
+	args := RequestVoteArgs{
+		Term:         rf.currentTerm,
+		CandidateId:  rf.me,
+		LastLogIndex: lastIdx,
+		LastLogTerm:  lastTerm,
+	}
+
+	for i := range rf.peers {
+		if i != rf.me {
+			reply := RequestVoteReply{}
+			_ = rf.peers[i].Call("Raft.RequestVote", &args, &reply)
+		}
+	}
+
+
 }
 
-func (rf *Raft) startElection() {
-	//TODO
+func (rf *Raft) checkElect() {
+	//TODO: periodically check for re-election
+
+	for {
+		rf.mu.Lock()
+		if time.Now().After(rf.electionDeadline) {
+			//Kick off re-election
+			rf.startElection()
+		}
+		rf.mu.Unlock()
+		time.Sleep(electionPollInterval)
+		
+	}
+
 }
+
+
 
 func (rf *Raft) tickFollower() {
 	rf.mu.Lock()
@@ -284,7 +348,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.commitIndex = 0
 	rf.lastApplied = 0
 
-	rf.serverState = 0 //start as follower
+	rf.serverState = 0 // start as follower
+	rf.votedFor = -1
+	rf.log = []int{0} // dummy entry at index 0 (term 0); avoids empty-log edge cases
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
