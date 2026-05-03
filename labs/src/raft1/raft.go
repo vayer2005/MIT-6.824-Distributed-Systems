@@ -23,7 +23,17 @@ import (
 const (
 	heartbeatInterval    = 100 * time.Millisecond
 	electionPollInterval = 10 * time.Millisecond
+
+	follower  = 0
+	leader    = 1
+	candidate = 2
 )
+
+// LogEntry is one Raft log entry (Figure 2). Command is unused until 3B.
+type LogEntry struct {
+	Term    int
+	Command interface{}
+}
 
 // A Go object implementing a single Raft peer.
 type Raft struct {
@@ -37,14 +47,15 @@ type Raft struct {
 	// state a Raft server must maintain.
 
 	currentTerm int
-	votedFor    int
-	log         []int
+	votedFor    int // -1 means none
+	log         []LogEntry
 	commitIndex int
 	lastApplied int
 
-	serverState int // 0 follower, 1 leader, 2 candidate
+	serverState int // follower, leader, candidate
 
 	electionDeadline time.Time
+	votesReceived    int // votes granted in current election (candidate only); guarded by mu
 }
 
 // return currentTerm and whether this server
@@ -58,11 +69,7 @@ func (rf *Raft) GetState() (int, bool) {
 	defer rf.mu.Unlock()
 
 	term = rf.currentTerm
-	if rf.serverState == 1 {
-		isleader = true
-	} else {
-		isleader = false
-	}
+	isleader = rf.serverState == leader
 	return term, isleader
 }
 
@@ -139,21 +146,42 @@ type RequestVoteReply struct {
 // HEARTBEAT msg
 // Sent from leader to follower, resets followers timeout. when recieved by follower
 type ApppendEntriesArgs struct {
+	Term int // leader's term (follower uses this to update / reject stale RPCs)
 }
 
 type ApppendEntriesReply struct {
+	Term    int
+	Success bool
 }
 
 func randomElectionTimeout() int64 {
 	return 250 + (rand.Int63() % 300)
 }
 
-func (rf *Raft) AppendEntries(args *ApppendEntriesArgs, reply *ApplyErrReply) {
-	//TODO: reset timeout var.
+func (rf *Raft) AppendEntries(args *ApppendEntriesArgs, reply *ApppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	rf.electionDeadline = time.Now().Add(time.Duration(randomElectionTimeout()))
 
+	reply.Term = rf.currentTerm
+	reply.Success = false
+
+	// Stale leader — reject (Figure 2).
+	if args.Term < rf.currentTerm {
+		return
+	}
+
+	if args.Term > rf.currentTerm {
+		rf.currentTerm = args.Term
+		rf.votedFor = -1
+	}
+	rf.serverState = follower
+
+	reply.Term = rf.currentTerm
+	reply.Success = true
+	rf.electionDeadline = time.Now().Add(time.Duration(randomElectionTimeout()) * time.Millisecond)
+
+	// Empty AppendEntries is only a heartbeat: do not append to rf.log.
+	// Later, append replicated entries when you implement 3B (each entry carries the term it was created in).
 }
 
 // example RequestVote RPC handler.
@@ -173,14 +201,11 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	if args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
 		rf.votedFor = -1
-		rf.serverState = 0
+		rf.serverState = follower
 	}
 
 	lastIdx := len(rf.log) - 1
-	lastTerm := 0
-	if lastIdx >= 0 {
-		lastTerm = rf.log[lastIdx]
-	}
+	lastTerm := rf.log[lastIdx].Term
 	upToDate := args.LastLogTerm > lastTerm ||
 		(args.LastLogTerm == lastTerm && args.LastLogIndex >= lastIdx)
 
@@ -237,72 +262,90 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 // term. the third return value is true if this server believes it is
 // the leader.
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	index := -1
-	term := -1
-	isLeader := true
-
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	if rf.serverState != leader {
+		return -1, rf.currentTerm, false
+	}
 	// Your code here (3B).
-
-	return index, term, isLeader
+	return -1, rf.currentTerm, true
 }
 
-func (rf *Raft) startElection() {
-	//TODO; already holding lock
-
-	rf.currentTerm += 1
-	lastIdx := len(rf.log) - 1
-	lastTerm := 0
-	if lastIdx >= 0 {
-		lastTerm = rf.log[lastIdx]
+// doElection starts an election if the deadline has passed. Does not hold rf.mu across RPCs.
+func (rf *Raft) doElection() {
+	rf.mu.Lock()
+	if rf.serverState == leader {
+		rf.mu.Unlock()
+		return
 	}
+	if rf.electionDeadline.IsZero() {
+		rf.electionDeadline = time.Now().Add(time.Duration(randomElectionTimeout()) * time.Millisecond)
+		rf.mu.Unlock()
+		return
+	}
+	if !time.Now().After(rf.electionDeadline) {
+		rf.mu.Unlock()
+		return
+	}
+
+	rf.currentTerm++
+	rf.serverState = candidate
+	rf.votedFor = rf.me
+	rf.votesReceived = 1
+	term := rf.currentTerm
+	lastIdx := len(rf.log) - 1
+	lastTerm := rf.log[lastIdx].Term
 	args := RequestVoteArgs{
-		Term:         rf.currentTerm,
+		Term:         term,
 		CandidateId:  rf.me,
 		LastLogIndex: lastIdx,
 		LastLogTerm:  lastTerm,
 	}
+	rf.electionDeadline = time.Now().Add(time.Duration(randomElectionTimeout()) * time.Millisecond)
+	rf.mu.Unlock()
 
 	for i := range rf.peers {
-		if i != rf.me {
-			reply := RequestVoteReply{}
-			_ = rf.peers[i].Call("Raft.RequestVote", &args, &reply)
+		if i == rf.me {
+			continue
 		}
+		peer := i
+		go func() {
+			var reply RequestVoteReply
+			ok := rf.sendRequestVote(peer, &args, &reply)
+			rf.mu.Lock()
+			defer rf.mu.Unlock()
+			if rf.currentTerm != term || rf.serverState != candidate {
+				return
+			}
+			if ok && reply.Term > rf.currentTerm {
+				rf.currentTerm = reply.Term
+				rf.serverState = follower
+				rf.votedFor = -1
+				rf.electionDeadline = time.Now().Add(time.Duration(randomElectionTimeout()) * time.Millisecond)
+				return
+			}
+			if ok && reply.VoteGranted {
+				rf.votesReceived++
+				if rf.votesReceived > len(rf.peers)/2 {
+					rf.serverState = leader
+				}
+			}
+		}()
 	}
-
-
 }
-
-func (rf *Raft) checkElect() {
-	//TODO: periodically check for re-election
-
-	for {
-		rf.mu.Lock()
-		if time.Now().After(rf.electionDeadline) {
-			//Kick off re-election
-			rf.startElection()
-		}
-		rf.mu.Unlock()
-		time.Sleep(electionPollInterval)
-		
-	}
-
-}
-
-
 
 func (rf *Raft) tickFollower() {
 	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
-	// Bootstrap deadline once so After(deadline) is meaningful before AppendEntries resets it.
 	if rf.electionDeadline.IsZero() {
 		rf.electionDeadline = time.Now().Add(time.Duration(randomElectionTimeout()) * time.Millisecond)
+		rf.mu.Unlock()
 		return
 	}
-
-	// Follower (0) or candidate (2): election watchdog only — do not bump deadline here.
-	if (rf.serverState == 0 || rf.serverState == 2) && time.Now().After(rf.electionDeadline) {
-		rf.startElection()
+	st := rf.serverState
+	timedOut := (st == follower || st == candidate) && time.Now().After(rf.electionDeadline)
+	rf.mu.Unlock()
+	if timedOut {
+		rf.doElection()
 	}
 }
 
@@ -312,13 +355,31 @@ func (rf *Raft) ticker() {
 		st := rf.serverState
 		rf.mu.Unlock()
 
-		if st == 1 {
+		if st == leader {
+			rf.mu.Lock()
+			term := rf.currentTerm
+			rf.mu.Unlock()
 			for i := range rf.peers {
-				if i != rf.me {
-					args := &ApppendEntriesArgs{}
-					reply := &ApppendEntriesReply{}
-					_ = rf.peers[i].Call("Raft.AppendEntries", args, reply)
+				if i == rf.me {
+					continue
 				}
+				peer := i
+				go func() {
+					args := &ApppendEntriesArgs{Term: term}
+					reply := &ApppendEntriesReply{}
+					ok := rf.peers[peer].Call("Raft.AppendEntries", args, reply)
+					if !ok {
+						return
+					}
+					rf.mu.Lock()
+					defer rf.mu.Unlock()
+					if reply.Term > rf.currentTerm {
+						rf.currentTerm = reply.Term
+						rf.serverState = follower
+						rf.votedFor = -1
+						rf.electionDeadline = time.Now().Add(time.Duration(randomElectionTimeout()) * time.Millisecond)
+					}
+				}()
 			}
 			time.Sleep(heartbeatInterval)
 		} else {
@@ -348,19 +409,16 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.commitIndex = 0
 	rf.lastApplied = 0
 
-	rf.serverState = 0 // start as follower
+	rf.serverState = follower
 	rf.votedFor = -1
-	rf.log = []int{0} // dummy entry at index 0 (term 0); avoids empty-log edge cases
+	rf.log = []LogEntry{{Term: 0}} // dummy at index 0
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
-	// start ticker goroutine to start elections
 	go rf.ticker()
 
-	// election checker process
-
-	go rf.checkElect()
+	_ = applyCh
 
 	return rf
 }
