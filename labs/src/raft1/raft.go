@@ -204,10 +204,12 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		rf.serverState = follower
 	}
 
-	lastIdx := len(rf.log) - 1
-	lastTerm := rf.log[lastIdx].Term
-	upToDate := args.LastLogTerm > lastTerm ||
-		(args.LastLogTerm == lastTerm && args.LastLogIndex >= lastIdx)
+	//lastIdx := len(rf.log) - 1
+	// lastTerm := rf.log[lastIdx].Term
+
+	upToDate := true
+	// upToDate := args.LastLogTerm > lastTerm ||
+	// 	(args.LastLogTerm == lastTerm && args.LastLogIndex >= lastIdx)
 
 	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) && upToDate {
 		rf.votedFor = args.CandidateId
