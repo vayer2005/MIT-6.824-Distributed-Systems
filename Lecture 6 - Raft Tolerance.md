@@ -1,0 +1,18 @@
+- Split brain
+	- Both servers think they are primary -> incorrect
+- Majority vote for network partition
+	- Paxos, VSR
+- Raft
+	- Key value server & Raft with each having logs
+	- Leader needs to be able to resend messages to servers if there were issues with some.
+	- Crashed servers must have the ability to rejoin the raft cluster
+		- Log state persisted to disk
+	- KV calls start function in raft.go
+	- Raft ensures all logs are the same by periodically checking
+- How leader elect works (lab 2)
+	- Leader possibly not needed (original paxos paper)
+	- Election can happen even if leader isnt down (network partition, slow leader)
+	- Different logs can exist, (packet dropped - no append)
+	- different entry in same log slot
+		- possible, leader crashes after appending to its own log
+- 
