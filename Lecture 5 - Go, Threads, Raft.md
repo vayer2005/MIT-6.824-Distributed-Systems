@@ -1,0 +1,12 @@
+- The go memory model
+- Concurerncy primatives
+	- closure -> inline defined function: go func() { }
+		- Can mutate variables defined in the calling function
+		- pass copy through this pattern
+		- ![[Screenshot 2026-05-04 at 2.54.16 PM.png]]
+	- defer keyword unlocks at the end of current function body
+- Locks are intended to protect invariants &! shared data
+- Condition variable
+	- Wait can only be called while holding a lock
+- 
+- 

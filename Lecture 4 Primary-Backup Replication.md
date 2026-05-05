@@ -23,7 +23,10 @@
 - The output rule
 	- primary not allowed to generate output (to client) unless backup recieves proper msg
 	- Performance slower
-	- 
+- Test and Set  server
+- Non-determinisitic events
+	- Instruction number needed in log entry
+	- Type + data
 
-VMWare Paper notes
--
+RAFT implementation for Lab
+![[Screenshot 2026-05-01 at 8.58.30 PM.png]]
