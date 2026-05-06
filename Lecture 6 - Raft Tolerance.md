@@ -15,4 +15,5 @@
 	- Different logs can exist, (packet dropped - no append)
 	- different entry in same log slot
 		- possible, leader crashes after appending to its own log
-- 
+Raft Paper for 2b lab
+- ![[Screenshot 2026-05-04 at 10.19.31 PM.png]]
