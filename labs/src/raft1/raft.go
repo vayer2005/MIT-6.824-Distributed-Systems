@@ -9,7 +9,7 @@ package raft
 
 import (
 	//	"bytes"
-	"fmt"
+
 	"math/rand"
 	"sync"
 	"time"
@@ -151,13 +151,13 @@ type RequestVoteReply struct {
 // HEARTBEAT msg
 // Sent from leader to follower, resets followers timeout. when recieved by follower
 type ApppendEntriesArgs struct {
-	Term int // leader's term (follower uses this to update / reject stale RPCs)
-	Log LogEntry //Empty if just hearbeat
+	Term int      // leader's term (follower uses this to update / reject stale RPCs)
+	Log  LogEntry //Empty if just hearbeat
 
-	PrevLogIndex int //index of log entry immediately preceding new ones
-	PrevLogTerm int	 // term of prevLogIndex entry
-	Entries []LogEntry	//entries to store (empty for heartbeat)
-	LeaderCommit int // Leader commit index
+	PrevLogIndex int        //index of log entry immediately preceding new ones
+	PrevLogTerm  int        // term of prevLogIndex entry
+	Entries      []LogEntry //entries to store (empty for heartbeat)
+	LeaderCommit int        // Leader commit index
 }
 
 type ApppendEntriesReply struct {
@@ -186,16 +186,37 @@ func (rf *Raft) AppendEntries(args *ApppendEntriesArgs, reply *ApppendEntriesRep
 		rf.votedFor = -1
 	}
 	rf.serverState = follower
-	if args.Log != nil {
-		//TODO: Append to my log and return success
+
+	lastIdx := len(rf.log) - 1
+	if args.PrevLogIndex > lastIdx {
+		reply.Term = rf.currentTerm
+		return
+	}
+	if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
+		reply.Term = rf.currentTerm
+		return
+	}
+
+	if len(args.Entries) > 0 {
+		rf.log = rf.log[:args.PrevLogIndex+1]
+		rf.log = append(rf.log, args.Entries...)
+	} else if lastIdx > args.PrevLogIndex {
+		// Heartbeat
+		rf.log = rf.log[:args.PrevLogIndex+1]
+	}
+
+	if args.LeaderCommit > rf.commitIndex {
+		lastNew := len(rf.log) - 1
+		if args.LeaderCommit < lastNew {
+			rf.commitIndex = args.LeaderCommit
+		} else {
+			rf.commitIndex = lastNew
+		}
 	}
 
 	reply.Term = rf.currentTerm
 	reply.Success = true
-	rf.electionDeadline = time.Now().Add(time.Duration (randomElectionTimeout()) * time.Millisecond)
-
-	// Empty AppendEntries is only a heartbeat: do not append to rf.log.
-	// Later, append replicated entries when you implement 3B (each entry carries the term it was created in).
+	rf.electionDeadline = time.Now().Add(time.Duration(randomElectionTimeout()) * time.Millisecond)
 }
 
 // example RequestVote RPC handler.
@@ -284,25 +305,45 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		return -1, rf.currentTerm, false
 	}
 
-	//If leader I want to append log to all clients.
-	args := &ApppendEntriesArgs{Term: term, Log: command}
+	rf.log = append(rf.log, LogEntry{Term: rf.currentTerm, Command: command})
+
+	index := len(rf.log) - 1
+	rf.matchIndex[rf.me] = index
 
 	for i := range rf.peers {
 		if i == rf.me {
 			continue
 		}
 		peer := i
-		go func() {
-			// var reply ApppendEntriesReply
-			
-		}()
+		next := rf.nextIndex[peer]
+		prevIdx := next - 1
+		prevTerm := rf.log[prevIdx].Term
+		entries := append([]LogEntry(nil), rf.log[next:]...)
+		leaderCommit := rf.commitIndex
+		term := rf.currentTerm
+
+		go func(p, prevI, prevT, lc, t int, ent []LogEntry) {
+			args := &ApppendEntriesArgs{
+				Term:         t,
+				PrevLogIndex: prevI,
+				PrevLogTerm:  prevT,
+				Entries:      ent,
+				LeaderCommit: lc,
+			}
+			reply := &ApppendEntriesReply{}
+			ok := rf.peers[p].Call("Raft.AppendEntries", args, reply)
+			if !ok {
+				return
+			}
+
+			_ = reply
+		}(peer, prevIdx, prevTerm, leaderCommit, term, entries)
 	}
-	// Your code here (3B).
-	return -1, rf.currentTerm, true
-	
+	return index, rf.currentTerm, true
+
 }
 
-func (rf * Raft) initLeaderIndex() {
+func (rf *Raft) initLeaderIndex() {
 	//TODO: Set nextIndex and lastIndex vars for leader upon election
 
 	lastLogIndex := len(rf.log) - 1
@@ -311,7 +352,7 @@ func (rf * Raft) initLeaderIndex() {
 		rf.nextIndex[j] = next
 		rf.matchIndex[j] = 0
 	}
-	
+
 }
 
 // doElection starts an election if the deadline has passed. Does not hold rf.mu across RPCs.
@@ -402,17 +443,36 @@ func (rf *Raft) ticker() {
 		if st == leader {
 			rf.mu.Lock()
 			term := rf.currentTerm
-			rf.mu.Unlock()
+			lc := rf.commitIndex
+			type aeSnap struct {
+				p, prevI, prevT int
+				ent             []LogEntry
+			}
+			snaps := make([]aeSnap, 0, len(rf.peers))
 			for i := range rf.peers {
 				if i == rf.me {
 					continue
 				}
-				peer := i
+				next := rf.nextIndex[i]
+				prevI := next - 1
+				prevT := rf.log[prevI].Term
+				ent := append([]LogEntry(nil), rf.log[next:]...)
+				snaps = append(snaps, aeSnap{i, prevI, prevT, ent})
+			}
+			rf.mu.Unlock()
+
+			for _, s := range snaps {
+				s := s
 				go func() {
-					logArg := &LogEntry{Term: term, }
-					args := &ApppendEntriesArgs{Term: term, Command: nil}
+					args := &ApppendEntriesArgs{
+						Term:         term,
+						PrevLogIndex: s.prevI,
+						PrevLogTerm:  s.prevT,
+						Entries:      s.ent,
+						LeaderCommit: lc,
+					}
 					reply := &ApppendEntriesReply{}
-					ok := rf.peers[peer].Call("Raft.AppendEntries", args, reply)
+					ok := rf.peers[s.p].Call("Raft.AppendEntries", args, reply)
 					if !ok {
 						return
 					}
@@ -459,7 +519,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.log = []LogEntry{{Term: 0}} // dummy at index 0
 
 	n := len(peers)
-	rf.nextIndex = make([]int, n)	
+	rf.nextIndex = make([]int, n)
 	rf.matchIndex = make([]int, n)
 
 	// initialize from state persisted before a crash
