@@ -44,6 +44,8 @@ type Raft struct {
 	persister *tester.Persister   // Object to hold this peer's persisted state
 	me        int                 // this peer's index into peers[]
 
+	applyCh   chan raftapi.ApplyMsg 	
+
 	// Your data here (3A, 3B, 3C).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
@@ -164,6 +166,14 @@ type ApppendEntriesArgs struct {
 type ApppendEntriesReply struct {
 	Term    int
 	Success bool
+
+	// Fast backup hint (used when Success==false).
+	// XTerm:  term of the conflicting entry (-1 if follower log is too short).
+	// XIndex: index of the first entry in XTerm in the follower's log.
+	// XLen:   length of the follower's log (used when XTerm==-1).
+	XTerm  int
+	XIndex int
+	XLen   int
 }
 
 func randomElectionTimeout() int64 {
@@ -217,8 +227,22 @@ func (rf *Raft) processAppendEntriesReply(peer int, rpcTerm int, prevI int, ent 
 		rf.advanceCommit()
 		return
 	}
-	if rf.nextIndex[peer] > 1 {
-		rf.nextIndex[peer]--
+	if reply.XTerm == -1 {
+		// Follower log was too short; jump nextIndex to end of follower's log.
+		rf.nextIndex[peer] = reply.XLen
+	} else {
+		// Find the last index in our log that has XTerm.
+		newNext := reply.XIndex
+		for i := len(rf.log) - 1; i >= 1; i-- {
+			if rf.log[i].Term == reply.XTerm {
+				newNext = i + 1
+				break
+			}
+		}
+		rf.nextIndex[peer] = newNext
+	}
+	if rf.nextIndex[peer] < 1 {
+		rf.nextIndex[peer] = 1
 	}
 }
 
@@ -241,12 +265,22 @@ func (rf *Raft) AppendEntries(args *ApppendEntriesArgs, reply *ApppendEntriesRep
 	rf.serverState = follower
 
 	lastIdx := len(rf.log) - 1
-	if args.PrevLogIndex != lastIdx {
-		reply.Term = rf.currentTerm
+	if args.PrevLogIndex > lastIdx {
+		// Follower log is too short.
+		reply.XTerm = -1
+		reply.XLen = len(rf.log)
 		return
 	}
 	if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
-		reply.Term = rf.currentTerm
+		// Term conflict: tell the leader about the conflicting term and
+		// the first index where that term appears so it can skip back fast.
+		xTerm := rf.log[args.PrevLogIndex].Term
+		xIndex := args.PrevLogIndex
+		for xIndex > 0 && rf.log[xIndex-1].Term == xTerm {
+			xIndex--
+		}
+		reply.XTerm = xTerm
+		reply.XIndex = xIndex
 		return
 	}
 
@@ -256,6 +290,14 @@ func (rf *Raft) AppendEntries(args *ApppendEntriesArgs, reply *ApppendEntriesRep
 	} else if lastIdx > args.PrevLogIndex {
 		// Heartbeat
 		rf.log = rf.log[:args.PrevLogIndex+1]
+	}
+
+	if args.LeaderCommit > rf.commitIndex {
+		rf.commitIndex = args.LeaderCommit
+		lastNew := len(rf.log) - 1
+		if lastNew < rf.commitIndex {
+			rf.commitIndex = lastNew
+		}
 	}
 
 	reply.Term = rf.currentTerm
@@ -530,7 +572,27 @@ func (rf *Raft) ticker() {
 	}
 }
 
-//TODO: Background routine that applies commits from leader to state machine
+// BackgroundApplyRoutine ships committed log entries to the service/tester on applyCh.
+func (rf *Raft) BackgroundApplyRoutine() {
+	for {
+		rf.mu.Lock()
+		for rf.lastApplied >= rf.commitIndex {
+			rf.mu.Unlock()
+			time.Sleep(10 * time.Millisecond)
+			rf.mu.Lock()
+		}
+		rf.lastApplied++
+		idx := rf.lastApplied
+		cmd := rf.log[idx].Command
+		rf.mu.Unlock()
+
+		rf.applyCh <- raftapi.ApplyMsg{
+			CommandValid: true,
+			Command:      cmd,
+			CommandIndex: idx,
+		}
+	}
+}
 
 // the service or tester wants to create a Raft server. the ports
 // of all the Raft servers (including this one) are in peers[]. this
@@ -552,6 +614,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.commitIndex = 0
 	rf.lastApplied = 0
 
+	rf.applyCh = applyCh
+
 	rf.serverState = follower
 	rf.votedFor = -1
 	rf.log = []LogEntry{{Term: 0}} // dummy at index 0
@@ -564,8 +628,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.readPersist(persister.ReadRaftState())
 
 	go rf.ticker()
-
-	_ = applyCh
+	go rf.BackgroundApplyRoutine()
 
 	return rf
 }
