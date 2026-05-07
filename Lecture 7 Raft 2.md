@@ -1,0 +1,24 @@
+- Append entry has prevlogindex and prevlogterm
+	- Must match with follower servers
+- Leader has nextIndex for all servers
+	- Next index starts at end of new leaders log - 1
+	- Sends out a list of all the logs needed
+	- Server deletes and appends whats needed (back up next Index?)
+	- How does it know to back up next index?
+- Term can only increase if election is won which means voted for nodes must increase their currentTerm variable
+- Who is allowed to be leader?
+	- Why not longest log as leader?
+		- Majority could have added another log which means it could have already been committed/written to db
+	- Election restriction
+		- Vote only if candidate has higher term in last log entry than me or (same last term and log length greater than or equal to log len)
+			- Ensures you can only become a candidate if you have log entries from higher terms, only people who recieve from previous leader are valid
+- Roll back on nextIndex (if fails)
+	- rolls back one entry at a time
+- Fast Back up (roll back logic)
+	- AE Reply Vars
+		- Xterm -> term of conflicting entry
+		- XIndex -> index of first entry w Xterm
+		- Xlen -> length of log
+- Persistence (3C)
+	- Log, currentTerm, VotedFor (only persistent data)
+	- 
