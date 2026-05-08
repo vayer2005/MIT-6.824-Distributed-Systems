@@ -21,4 +21,14 @@
 		- Xlen -> length of log
 - Persistence (3C)
 	- Log, currentTerm, VotedFor (only persistent data)
-	- 
+	- Log is the only record of application state, actual value is not persistent.
+	- CurrentTerm and votedfor persists
+		- ensures each term has one leader
+		- cant vote for multiple people in one term
+	- to persist call write and fsync
+- Snapshots + logCompaction
+	- Application state is smaller than log in practice
+- Linearizability
+	- Execution history is linearizable if there exists a total order of operations that matches the real time for non-concurrent requests
+	- each read sees the value from most recent write in order
+- 
