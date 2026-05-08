@@ -8,13 +8,13 @@ package raft
 // raft interface.
 
 import (
-	//	"bytes"
+	"bytes"
 
 	"math/rand"
 	"sync"
 	"time"
 
-	//	"6.5840/labgob"
+	"6.5840/labgob"
 	"6.5840/labrpc"
 	"6.5840/raftapi"
 	tester "6.5840/tester1"
@@ -33,7 +33,7 @@ const (
 // LogEntry is one Raft log entry (Figure 2). Command is unused until 3B.
 type LogEntry struct {
 	Term    int
-	Index 	int
+	Index   int
 	Command interface{}
 }
 
@@ -44,7 +44,7 @@ type Raft struct {
 	persister *tester.Persister   // Object to hold this peer's persisted state
 	me        int                 // this peer's index into peers[]
 
-	applyCh   chan raftapi.ApplyMsg 	
+	applyCh chan raftapi.ApplyMsg
 
 	// Your data here (3A, 3B, 3C).
 	// Look at the paper's Figure 2 for a description of what
@@ -66,73 +66,15 @@ type Raft struct {
 	votesReceived    int // votes granted in current election (candidate only); guarded by mu
 }
 
-// return currentTerm and whether this server
-// believes it is the leader.
-func (rf *Raft) GetState() (int, bool) {
-
-	var term int
-	var isleader bool
-	// Your code here (3A).
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
-	term = rf.currentTerm
-	isleader = rf.serverState == leader
-	return term, isleader
+type InstallSnapshotArgs struct {
+	Term              int
+	LeaderId          int
+	LastIncludedIndex int
+	LastIncludedTerm  int
+	Snapshot          []byte
 }
-
-// save Raft's persistent state to stable storage,
-// where it can later be retrieved after a crash and restart.
-// see paper's Figure 2 for a description of what should be persistent.
-// before you've implemented snapshots, you should pass nil as the
-// second argument to persister.Save().
-// after you've implemented snapshots, pass the current snapshot
-// (or nil if there's not yet a snapshot).
-func (rf *Raft) persist() {
-	// Your code here (3C).
-	// Example:
-	// w := new(bytes.Buffer)
-	// e := labgob.NewEncoder(w)
-	// e.Encode(rf.xxx)
-	// e.Encode(rf.yyy)
-	// raftstate := w.Bytes()
-	// rf.persister.Save(raftstate, nil)
-}
-
-// restore previously persisted state.
-func (rf *Raft) readPersist(data []byte) {
-	if data == nil || len(data) < 1 { // bootstrap without any state?
-		return
-	}
-	// Your code here (3C).
-	// Example:
-	// r := bytes.NewBuffer(data)
-	// d := labgob.NewDecoder(r)
-	// var xxx
-	// var yyy
-	// if d.Decode(&xxx) != nil ||
-	//    d.Decode(&yyy) != nil {
-	//   error...
-	// } else {
-	//   rf.xxx = xxx
-	//   rf.yyy = yyy
-	// }
-}
-
-// how many bytes in Raft's persisted log?
-func (rf *Raft) PersistBytes() int {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	return rf.persister.RaftStateSize()
-}
-
-// the service says it has created a snapshot that has
-// all info up to and including index. this means the
-// service no longer needs the log through (and including)
-// that index. Raft should now trim its log as much as possible.
-func (rf *Raft) Snapshot(index int, snapshot []byte) {
-	// Your code here (3D).
-
+type InstallSnapshotReply struct {
+	Term int
 }
 
 // example RequestVote RPC arguments structure.
@@ -176,6 +118,88 @@ type ApppendEntriesReply struct {
 	XLen   int
 }
 
+// return currentTerm and whether this server
+// believes it is the leader.
+func (rf *Raft) GetState() (int, bool) {
+
+	var term int
+	var isleader bool
+	// Your code here (3A).
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	term = rf.currentTerm
+	isleader = rf.serverState == leader
+	return term, isleader
+}
+
+// save Raft's persistent state to stable storage,
+// where it can later be retrieved after a crash and restart.
+// see paper's Figure 2 for a description of what should be persistent.
+// before you've implemented snapshots, you should pass nil as the
+// second argument to persister.Save().
+// after you've implemented snapshots, pass the current snapshot
+// (or nil if there's not yet a snapshot).
+func (rf *Raft) persist() {
+	// Your code here (3C).
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.votedFor)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.log)
+	data := w.Bytes()
+	rf.persister.Save(data, nil)
+}
+
+// restore previously persisted state.
+func (rf *Raft) readPersist(data []byte) {
+	if data == nil || len(data) < 1 { // bootstrap without any state?
+		return
+	}
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	var votedFor int
+	var currentTerm int
+	var log []LogEntry
+	if d.Decode(&votedFor) != nil || d.Decode(&currentTerm) != nil || d.Decode(&log) != nil {
+		return
+	}
+	rf.mu.Lock()
+	rf.votedFor = votedFor
+	rf.currentTerm = currentTerm
+	rf.log = log
+	rf.mu.Unlock()
+	// Your code here (3C).
+	// Example:
+	// r := bytes.NewBuffer(data)
+	// d := labgob.NewDecoder(r)
+	// var xxx
+	// var yyy
+	// if d.Decode(&xxx) != nil ||
+	//    d.Decode(&yyy) != nil {
+	//   error...
+	// } else {
+	//   rf.xxx = xxx
+	//   rf.yyy = yyy
+	// }
+}
+
+// how many bytes in Raft's persisted log?
+func (rf *Raft) PersistBytes() int {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	return rf.persister.RaftStateSize()
+}
+
+// the service says it has created a snapshot that has
+// all info up to and including index. this means the
+// service no longer needs the log through (and including)
+// that index. Raft should now trim its log as much as possible.
+func (rf *Raft) Snapshot(index int, snapshot []byte) {
+	// Your code here (3D).
+
+}
+
 func randomElectionTimeout() int64 {
 	return 250 + (rand.Int63() % 300)
 }
@@ -213,6 +237,7 @@ func (rf *Raft) processAppendEntriesReply(peer int, rpcTerm int, prevI int, ent 
 		rf.serverState = follower
 		rf.votedFor = -1
 		rf.electionDeadline = time.Now().Add(time.Duration(randomElectionTimeout()) * time.Millisecond)
+		rf.persist()
 		return
 	}
 	if reply.Success {
@@ -261,6 +286,7 @@ func (rf *Raft) AppendEntries(args *ApppendEntriesArgs, reply *ApppendEntriesRep
 	if args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
 		rf.votedFor = -1
+		rf.persist()
 	}
 	rf.serverState = follower
 
@@ -269,6 +295,7 @@ func (rf *Raft) AppendEntries(args *ApppendEntriesArgs, reply *ApppendEntriesRep
 		// Follower log is too short.
 		reply.XTerm = -1
 		reply.XLen = len(rf.log)
+		rf.electionDeadline = time.Now().Add(time.Duration(randomElectionTimeout()) * time.Millisecond)
 		return
 	}
 	if rf.log[args.PrevLogIndex].Term != args.PrevLogTerm {
@@ -281,6 +308,7 @@ func (rf *Raft) AppendEntries(args *ApppendEntriesArgs, reply *ApppendEntriesRep
 		}
 		reply.XTerm = xTerm
 		reply.XIndex = xIndex
+		rf.electionDeadline = time.Now().Add(time.Duration(randomElectionTimeout()) * time.Millisecond)
 		return
 	}
 
@@ -294,14 +322,19 @@ func (rf *Raft) AppendEntries(args *ApppendEntriesArgs, reply *ApppendEntriesRep
 
 	if args.LeaderCommit > rf.commitIndex {
 		rf.commitIndex = args.LeaderCommit
-		lastNew := len(rf.log) - 1
-		if lastNew < rf.commitIndex {
-			rf.commitIndex = lastNew
-		}
+	}
+	// Truncation can shrink the log while commitIndex stayed high; always clamp.
+	lastNew := len(rf.log) - 1
+	if rf.commitIndex > lastNew {
+		rf.commitIndex = lastNew
+	}
+	if rf.lastApplied > lastNew {
+		rf.lastApplied = lastNew
 	}
 
 	reply.Term = rf.currentTerm
 	reply.Success = true
+	rf.persist()
 	rf.electionDeadline = time.Now().Add(time.Duration(randomElectionTimeout()) * time.Millisecond)
 }
 
@@ -336,7 +369,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		reply.VoteGranted = true
 		rf.electionDeadline = time.Now().Add(time.Duration(randomElectionTimeout()) * time.Millisecond)
 	}
-
+	rf.persist()
 	reply.Term = rf.currentTerm
 }
 
@@ -372,9 +405,6 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 	return ok
 }
 
-
-
-
 // the service using Raft (e.g. a k/v server) wants to start
 // agreement on the next command to be appended to Raft's log. if this
 // server isn't the leader, returns false. otherwise start the
@@ -409,7 +439,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		entries := append([]LogEntry(nil), rf.log[next:]...)
 		leaderCommit := rf.commitIndex
 		term := rf.currentTerm
-
 		go func(p, prevI, prevT, lc, t int, ent []LogEntry) {
 			args := &ApppendEntriesArgs{
 				Term:         t,
@@ -430,6 +459,8 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 		}(peer, prevIdx, prevTerm, leaderCommit, term, entries)
 	}
+
+	rf.persist()
 	return index, rf.currentTerm, true
 
 }
@@ -471,6 +502,7 @@ func (rf *Raft) doElection() {
 	term := rf.currentTerm
 	lastIdx := len(rf.log) - 1
 	lastTerm := rf.log[lastIdx].Term
+	rf.persist()
 	args := RequestVoteArgs{
 		Term:         term,
 		CandidateId:  rf.me,
@@ -498,6 +530,7 @@ func (rf *Raft) doElection() {
 				rf.serverState = follower
 				rf.votedFor = -1
 				rf.electionDeadline = time.Now().Add(time.Duration(randomElectionTimeout()) * time.Millisecond)
+				rf.persist()
 				return
 			}
 			if ok && reply.VoteGranted {
