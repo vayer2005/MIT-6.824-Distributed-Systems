@@ -12,6 +12,18 @@
 - But zookeeper read performance goes up with more servers
 	- non-linearizable reads. stale data allowed
 	- Linearizable writes (raft?)
+- Fifo client order applies to single clients requests
+- Atomic updates (shared file system?)
+	- Master has a write order
+	- Deletes ready file
+	- writes to necessary files
+	- creates ready file
+- Read ordering
+	- check if ready file exists and set watch=true
+	- if the replica executes something to trigger the watch then it responds before any more reads
+	- if exists, reads files
 
 Zookeeper Paper Notes
+- All writes are linearizable
+- Configuration: list of operational parameters
 - 

@@ -15,5 +15,15 @@
 	- Different logs can exist, (packet dropped - no append)
 	- different entry in same log slot
 		- possible, leader crashes after appending to its own log
-Raft Paper for 2b lab
+Raft Paper for 2b/2C lab
 - ![[Screenshot 2026-05-04 at 10.19.31 PM.png]]
+Section 7 to end
+- Log compaction
+- Snapshotting
+	- current system state is written to stable storage
+	- covers the committed entries in the log (applied?)
+	- InstallSnapshot rpc -> reply has current term for leader to update itself.
+- Sending every snapshot over the network is a bottleneck
+- Client interaction
+	- Leader uses heartbeat messages before processing a read only request to see if data is stale
+- 
