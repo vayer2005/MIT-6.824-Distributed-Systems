@@ -33,4 +33,11 @@ Zookeeper Paper Notes
 	- Wait free coordination service 
 - Client uses zookeeper client library
 - Znode is an in memory data node in the zookeeper data
-- 
+	- Processes can obtain group information by listening to ephermal child nodes under a znode
+		- Can set watch flag == true for this set
+- Locks
+	- Lock is represented by a znode. Client tried to create a znode with an ephermal flag
+	- if succeeds, client holds lock else sets watch on that lock.
+- Replicated DB
+	- Idempotent state changes mean fuzzy (non lock protected) snapshots are fine
+- Q: Unsure about fifo client ordering

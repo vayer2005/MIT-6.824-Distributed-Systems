@@ -1,0 +1,27 @@
+- Finish zookeeper discussion
+	- Test-and-set server use case
+	- Znodes
+		- Default: Permanent untill deleted
+		- Ephermal: deleted when client dies
+		- Sequential: File with name with never repeating number
+		- to create: Create(Path, Data, FLAGS) ->  Exclusive
+		- Can return stale data so puts (counter) can be writing to stale
+			- Include version number in set and gets so updates only happen on correct version
+	- Lock without herd
+		- sequential file name -> f27 (ascending sequence num)
+		- Lowest number gets lock and returns
+			- otherwise wait until you are the lowest (watch on next smallest file)
+		- Scalable lock
+			- Partial failiures can still happen; crash and release lock in the middle of operation (no atomicity guarantee)
+-  Craq
+	- optimization of chain replication by increasing read throughput (without sacrificing stale reads)
+	- Chain replication
+		- arranging server nodes in a linear chain, passes writes downstream and tail sends ack to head
+		- If tail recieves write, all servers are in the same state guaranteed.
+		- Recovery is like a linked list
+	- No defense against split brain/network partition
+		- Solved with configuration manager: sends out configuration whenever it thinks somethign has died, everything else follows.
+		- Config manager uses consensus under the hood (zookeeper)
+	- Single slow server can bottleneck, leader does not constitute any bottleneck
+	- 
+- Craq Paper
