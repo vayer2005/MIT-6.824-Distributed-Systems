@@ -26,4 +26,11 @@
 Zookeeper Paper Notes
 - All writes are linearizable
 - Configuration: list of operational parameters
+- Opaque intentionally to fit different coordination needs
+- FIfo client order enables async operations which is good for new clients becoming leader and managing metadata in which multiple outstanding ops ar eneeded
+- Watch mechanism allows clients to invalidate their cache themselves when leader changes (Zookeeper does not have to manage this)
+- Coordination kernel (main contribition of zookeeper)
+	- Wait free coordination service 
+- Client uses zookeeper client library
+- Znode is an in memory data node in the zookeeper data
 - 
