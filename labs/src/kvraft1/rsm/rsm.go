@@ -2,6 +2,7 @@ package rsm
 
 import (
 	"sync"
+	"time"
 
 	"6.5840/kvsrv1/rpc"
 	"6.5840/labrpc"
@@ -10,10 +11,20 @@ import (
 	tester "6.5840/tester1"
 )
 
+const (
+	applyWaitTime    = 100 * time.Millisecond
+)
+
 type Op struct {
 	Me  int
 	Id  int
 	Req any
+}
+
+// opWaitKey identifies who submitted an op; Id alone is not unique across peers.
+type opWaitKey struct {
+	Me int
+	Id int
 }
 
 // A server (i.e., ../server.go) that wants to replicate itself calls
@@ -36,7 +47,30 @@ type RSM struct {
 	maxraftstate int // snapshot if log grows this big
 	sm           StateMachine
 	// Your definitions here.
-	nextOpId	 int
+	nextOpId int
+	waiters  map[opWaitKey]chan struct{}
+}
+
+func (rsm *RSM) ApplyRoutine() {
+	//TODO: Consistently pulls apply msgs off the channel and notifies waiting routines.
+	for {
+		msg := <-rsm.applyCh
+
+		commandValid := msg.CommandValid
+		if (!commandValid) {
+			continue
+		}
+		op := msg.Command.(Op)
+		key := opWaitKey{Me: op.Me, Id: op.Id}
+		rsm.mu.Lock()
+		ch, found := rsm.waiters[key]
+		if found {
+			delete(rsm.waiters, key)
+			close(ch)
+		}
+		rsm.mu.Unlock()
+	
+	}
 }
 
 // servers[] contains the ports of the set of
@@ -60,12 +94,14 @@ func MakeRSM(servers []*labrpc.ClientEnd, me int, persister *tester.Persister, m
 		maxraftstate: maxraftstate,
 		applyCh:      make(chan raftapi.ApplyMsg),
 		sm:           sm,
+		waiters:      make(map[opWaitKey]chan struct{}),
 	}
 	if !tester.UseRaftStateMachine {
 		rsm.rf = raft.Make(servers, me, persister, rsm.applyCh)
 	}
 
 	//Applier goroutine. constantly pulls off apply channel
+	go rsm.ApplyRoutine()
 
 	return rsm
 }
@@ -85,22 +121,22 @@ func (rsm *RSM) Submit(req any) (rpc.Err, any) {
 	rsm.mu.Lock()
 	id := rsm.nextOpId
 	rsm.nextOpId++
+	done := make(chan struct{})
+	key := opWaitKey{Me: rsm.me, Id: id}
+	rsm.waiters[key] = done
 	rsm.mu.Unlock()
 
-	op := Op{Me:rsm.me, Id: id, Req: req}
+	op := Op{Me: rsm.me, Id: id, Req: req}
 
-	index, term, isLeader := rsm.rf.Start(op)
+	_, _, isLeader := rsm.rf.Start(op)
 
 	if !isLeader {
-		return rpc.ErrWrongLeader, nil 
+		rsm.mu.Lock()
+		delete(rsm.waiters, key)
+		rsm.mu.Unlock()
+		return rpc.ErrWrongLeader, nil
 	}
-	//Need to know if log was applied successfully
+	<-done
 
 	return rpc.OK, nil
-
-
-
-
-	// your code here
-	return rpc.ErrWrongLeader, nil // i'm dead, try another server.
 }
