@@ -11,6 +11,7 @@ type Clerk struct {
 	clnt    *tester.Clnt
 	servers []string
 	leader int // last successful leader (index into servers[])
+	term int
 	// You can add to this struct.
 }
 
@@ -37,6 +38,13 @@ func (ck *Clerk) Leader() int {
 func (ck *Clerk) Get(key string) (string, rpc.Tversion, rpc.Err) {
 
 	// You will have to modify this function.
+	args := rpc.GetArgs{Key:key}
+	reply := rpc.GetReply{}
+	//Keep trying until leader is got.
+	leaderIdx := ck.Leader()
+
+	ok := ck.clnt.Call(ck.servers[leaderIdx], "KVServer.Get", &args, &reply)
+	
 	return "", 0, ""
 }
 

@@ -25,3 +25,8 @@
 	- Single slow server can bottleneck, leader does not constitute any bottleneck
 	- 
 - Craq Paper
+	- Classic chain replication leads to tail being a hotspot for reads
+	- Eventual consistency: can have stale reads
+	- Uses dirty state before tail passes ack back to signify data has not been committed
+	- Mini-transactions
+		- Single key operations: prepend/append, increment/decrement, test and set (only update a keys object if its current version number is specified in the operation)
