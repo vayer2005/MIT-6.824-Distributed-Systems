@@ -1,1 +1,30 @@
-- 
+- Distributed file system
+	- caching - coherence
+	- distributed transactions
+	- distributed crash recovery
+- File system calls have franginpani module in each work station
+	- Write back cache (all done in individual frangipani module)
+		- Natural scaling for running users individual actions
+- Petal servers (Virtual disk)
+	- RPC sent to petal servers for reads and writes
+	- Acting like a shared disk drive for each frangipani to talk to
+- Challenges (caching, decentralized)
+	- Caching affects strong consistencey, mods need to be scene (cache coherence)
+		- Use of locks to drive cache coherence
+		- Lockserver (per file with owner)
+			- Each workstation (fran module) keeps track of which locks it holds
+			- Asks lockserver for lock, then petal for data
+			- No cached data without lock? 
+				- Before releasing lock have to write data back to petal
+		- Lockserver does not know anythign about files, just an opaque id (inumber)
+![[Screenshot 2026-05-15 at 2.42.38 PM.png]]	
+- Atomicity (multistep operations)
+	- Transactions (Distributed). Other workstations cannot see my changes until I have finished my ops
+	- Aquire all locks I need (move file from one dir to another - need to modify both dirs)
+-  Crash recovery of individual servers
+	- While holding locks -> cannot release locks due to crash (breaks atomicity)
+	- Write ahead logging
+		- Workstation before any writes will append log entry describing full set of ops its about to do
+		- Per workstation logs (stored in petal)
+			- LSN -> block number, verison number, data
+	- 
