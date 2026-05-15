@@ -1,0 +1,27 @@
+- EC2 -> elastic cloud. Renting out VM's to customers
+	- Each machine has multiple EC2 instances
+		- Linux os, web server, DB
+		- Each server used to have disk attatched with each cutomer having slice of disk
+	- EBS (Elastic block store)
+		- DB has replicated storage system available
+- DB Tutorial -> Xaction, Crash recovery
+	- Write ahead log. commits log entries describing modifications
+		- Commit record refers to IDs in the write ahead log
+- RDS
+	- Data sent to another availability zone (mirroring all writes)
+	- Each page is 8-16Kb which means reads and writes of just two objs are a lot of data moved around disks (8kb writes across a network)
+- Aurora
+	- DB Server with 6 replicas in 3 availablity zones
+		- only log records are written over the network
+		- Quorum -> 4 fastest of 6
+	- Fault tolerant goals
+		- Reads and writes w one dead AZ
+		- Read with 1 server + 1 AZ dead 
+		- Transient Scow
+		- Fast re-replication
+	- Quorum replication
+		- N replicas, W writes, R Reads
+			- W + R > N -> read quorum must overlab with at least one write quorum
+		- Reader gets back R different results
+		- Writes are log entries
+		- 
