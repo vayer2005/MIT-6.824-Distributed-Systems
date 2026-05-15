@@ -24,4 +24,8 @@
 			- W + R > N -> read quorum must overlab with at least one write quorum
 		- Reader gets back R different results
 		- Writes are log entries
-		- 
+	- Protection groups 
+		- Data sharded across multiple groups. stops total storage from being bounded by side of 2 HDDs
+		- Each physical machine takes away the 10gb shards form each gb stored on teh drive.
+		- Paralell recovery from all machines
+	
