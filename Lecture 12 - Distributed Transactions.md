@@ -1,0 +1,24 @@
+- Concurrency control & Atomic commit
+	- 2 customers bank balances can be on multiple servers
+- Transaction thread and an audit thread (total money = CONST)
+- ACID -> Atomic (all or none despite failiure), Consistent, Isolated (serializable), Durable (Persistent)
+- Serializable
+	- There exists some serial order of Xactions that yields same result as ACTUAL Xactions
+- Pessimistic Concurrency Control
+	- Locking (slower performance)/ Two phase locking
+	- Can deadlock if both transactions are awaiting on the others lock.
+- Optimistic Concurrency Control
+	- Writing without checking shared data and check after and abort if another thread was writing.
+- Handling failiures on sharded transaction
+	- Two phase commit
+		- Transaction coordinator (one computer running the transaction) -> sends messages to other computers (participants) for what they need to execute.
+		- ![[Screenshot 2026-05-18 at 10.11.21 AM.png]]
+		- ![[Screenshot 2026-05-18 at 10.18.09 AM.png]]
+	- Must log list of previous state and all info required to commit Xaction for reversibility
+	- Crash between commit of two machines -> must resend on restart (only if after sending commit msg)
+	- If coordinator has not got yes or no response, then will abort the entire Xaction before commit to let go of locks.
+	- After sending yes, cannot abort the Xaction, because coordinator may have committed
+	- Slow due to multiple rounds of messages
+	- Raft -> High availability when multiple servers crash (only need majority)
+	- 2PC -> All Xactions need to do their part (be available). Not highly available
+	- 
