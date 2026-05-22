@@ -21,4 +21,8 @@
 	- Slow due to multiple rounds of messages
 	- Raft -> High availability when multiple servers crash (only need majority)
 	- 2PC -> All Xactions need to do their part (be available). Not highly available
+- 2 phase commit
+	- Ready to each Server, they grab the lock and reply OK
+		- if one does not get lock TC aborts
+	- Commit message sent, each server commits then releases lock and responds OK
 	- 
