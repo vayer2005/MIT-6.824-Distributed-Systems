@@ -1,0 +1,25 @@
+- Distributed transactions over multiple datacentres
+- Read only transactions are dominant
+- Each shard has its own paxos protocol running. (replicated shards)
+	- Minority replicas might be lagging (reading shards may be stale)
+- Read Write Xaction
+	- Client sends reads to leaders of each paxos instance and each instance grabs lock
+	- Client upon recieving response sends write request to leader
+		- Leader sends prepare msg to followers for the write (log)
+		- Replies yes back to coordinator
+	- Why is Y the transaction leader?
+- Read only Xaction
+	- Serializable -> concurrency can be made linear
+	- External consistency == Linearizability
+	- ![[Screenshot 2026-05-20 at 9.16.36 AM.png]]
+	- Not serializable -> Reads split between transactions if you read latest value
+	- Snapshot isolation (executes in timestamp order)
+		- Note down each read timestamp -> x@10 = 348, x@20 = 443
+		- Safe time
+			- Delay until log record with nesessary timestamp has been recieved from leader
+	- Issue -> Clock cannot be synchronized exactly
+	- Commit wait rule
+		- Waits until it knows its timestamp is in the past
+
+Spanner Paper
+- 
