@@ -1,1 +1,36 @@
-- 
+- Performance, Sharding, Ram, NvRam, RDMA
+- Non Volatile RAM
+	- Cannot write to all servers as a site wide power failiure wipes all servers
+	- Battery connected to servers, if activated copies all RAM to SSD attatched to server, then machine shuts itself down
+- Network - Traditional
+- Kernel Bypass
+	- Application can directly access network interface card & Vice versa (NIC DMAs into Application)
+	- All kernel code related to the network is bypassed
+- Remote DMA
+	- Can tell an application on another machine to read or write certain bytes directly then sends result back
+	- ![[Screenshot 2026-06-08 at 12.51.05 PM.png]]
+	- Can get data we need from another application without using the other application CPU at all
+	- No clear solution to the data race issue
+- Optimistic Concurrency Control
+	- Pessimistic uses locks -> must aquire + wait for lock
+	- Read without locking (Optimistic)
+	- Buffer writes
+	- commit needs validation stage
+		- if conflicts, state is aborted
+- Farm API
+	- TXCreate()
+	- o = txRead(OID)
+	- o.f += 1
+	- txWrite(OID, o)
+	- ok = txCommit() //Succeeds or fails
+	- Exponential backoff -> gives some txs chance to succeed
+- Server memory
+	- Reigon contains objects (versioned + lock flag)
+	- ![[Screenshot 2026-06-08 at 1.13.59 PM.png]]
+	- 1) Collect RDMA read from each primary
+		- Append this read to log
+		- Primary reads log and tries to aquire lock
+		- Checks version number to ensure no one wrote to object in the meantime.
+- Primary sees two different "get lock" log messages (must have correct version num)
+- Validate phase allows reads to not have locks
+	- 
