@@ -33,4 +33,8 @@
 		- Checks version number to ensure no one wrote to object in the meantime.
 - Primary sees two different "get lock" log messages (must have correct version num)
 - Validate phase allows reads to not have locks
-	- 
+
+Farm Paper
+- Once you limit network and disk latency bottlnecks (by attatching batteries and using DRAM) -> CPU becomes the bottleneck
+- One sided RDMA limits CPU bottleneck because it has zero interaction with other machine's CPU
+- Each kernel thread runs an event loop that executes application code and polls the RDMA completion queues
