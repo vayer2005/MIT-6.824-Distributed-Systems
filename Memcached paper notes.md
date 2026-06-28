@@ -1,0 +1,40 @@
+http://nil.csail.mit.edu/6.824/2020/papers/memcache-fb.pdf
+
+- Need to aggregate content on the fly and scale to process millions of user requests
+- System size is important
+	- maintaining data consistency can be easier at small scales if replication is minimal compared to larger ones where replication is often necessary.
+- Users consume more data than they create -> caching is useful
+- Demand filled Look aside cache
+	- An application manages the cache, cache does not talk to DB
+	- Fileld on demand
+- Wide fan out
+	- Many lookups per request. loading a page may need, user profile, friend list, thumbnails, metadata, comments
+- ![[Screenshot 2026-06-27 at 10.52.19 PM.png]]
+	- Each storage cluster is a MySQL Shard
+- Each cluster contains hundreds of running memcached servers
+	- items are distributed across the servers through consistent hashing
+	- All web servers communicate with ALL memcached servers
+		- All to all bottleneck -> replication
+- DAG
+	- Some keys may not depend on eachother (DAG toposort)
+- Network info
+	- UDP for get -> practical with small packet loss
+	- TCP for delete and set -> avoid msg drop and retry overhead
+- Incast Congestion
+	- Many nodes reply to the same client at the same time
+	- Memcached client will limit how many requests outstanding it can have
+		- WINDOW_SIZE = 50 -> only can have maximum 50 outgoing unresolved reqs
+		- This window is adaptive *LIIKE TCP CONGESTION CONTROL* https://www.geeksforgeeks.org/computer-networks/tcp-congestion-control/
+		- The logic behind this congestion mechanism is that windows dynamically grow and shrink because this path on the switch may be hot/cold at the time and allows for better congestion management
+- Leases
+	- Solves stale sets and thundering herds issues
+	- Thundering herd -> a specific key udnergoes heavy read and write activity
+	- "memcached instance gives a lease to a client to set data back into the cache when that client experiences a cache miss. The lease is a 64-bit token bound to the specific key the client originally requested. The client provides the lease token when setting the value in the cache. With the lease token, memcached can verify and determine whether the data should be stored and thus arbitrate concurrent writes."
+	- Why not always use lease instead of locking? (https://engineersmeetai.substack.com/p/why-distributed-systems-prefer-leases)
+		- Leasing is better when conflicts are rare and a rejected set is cheap to retry
+	- All try reading, all miss, first one updates memcache, rest read again.
+		- Hands out ONE lease token, only one every 10 seconds so no one else can get the lease token.
+		- rest retry reads
+- Memcache pools replication
+	- Replicate servers for horizontal scaling.
+- 
