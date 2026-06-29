@@ -1,0 +1,17 @@
+- Frontend servers (multiple) talk to one database server
+	- WIll not scale with one single databse server
+		- Have to shard data in the DBs (reads and writes now evenly split)
+	- Memcached layer between FE and DB now to prevent hot shards
+		- Memcached usually does not store raw db objects, some frontend processing is usually done
+		- Lookaside cache NOT a look-through cache (forward to db from cache)
+	- Writes go to primary, reads (can be stale) go to secondary
+- Why not update cache directly in writes?
+	- Because if another write updates in between the memcache will have stale data that is not invalidated
+- ![[Screenshot 2026-06-28 at 10.33.31 PM.png]]
+- Multiple clusters per reigon. Replicated + Sharded in each reigon. Each cluster has a 100% shard coverage + is replicated
+- Reigonal pool
+	- for data that is not popular in which we wouldnt care if its replicated for horiz scaling
+- Thundering herd
+	- Popular data missed == everyone requests same key from DB at same time
+	- solved with leases
+- 

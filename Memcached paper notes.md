@@ -36,5 +36,8 @@ http://nil.csail.mit.edu/6.824/2020/papers/memcache-fb.pdf
 		- Hands out ONE lease token, only one every 10 seconds so no one else can get the lease token.
 		- rest retry reads
 - Memcache pools replication
-	- Replicate servers for horizontal scaling.
-- 
+	- DIfferent server needds. keys access frequently but caceh miss is inexpensive. vice versa
+	- Horizontal scaling instead of splitting the data between two servers.
+	- 
+- Across reigon consistency
+	- 
